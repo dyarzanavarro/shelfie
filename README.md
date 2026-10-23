@@ -1,9 +1,9 @@
 # Shelfie
 
-A lean, modern ebook library for Windows: a friendlier alternative to Calibre that does the three things most people need.
+A lean, modern ebook library for Windows: a friendlier alternative to eBook mgtm software that does the three things most people need.
 
-- **Library**: drop in EPUB, MOBI, AZW3 and PDF files (or whole folders, including an existing Calibre library). Shelfie reads titles, authors, series and covers, and keeps duplicates out.
-- **Convert**: turn MOBI/AZW3 into EPUB, entirely built in. No Calibre needed.
+- **Library**: drop in EPUB, MOBI, AZW3 and PDF files (or whole folders, including an existing library). Shelfie reads titles, authors, series and covers, and keeps duplicates out.
+- **Convert**: turn MOBI/AZW3 into EPUB, entirely built in.
 - **Kindle**: plug your Kindle in with a USB cable and copy books straight onto it, or set up Send to Kindle to deliver books over Wi-Fi by email.
 
 ## Download
