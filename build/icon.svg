@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3b2f8f"/>
+      <stop offset="1" stop-color="#16123d"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.78" r="0.55">
+      <stop offset="0" stop-color="#ffb547" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#ffb547" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="shine" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background tile -->
+  <rect x="32" y="32" width="960" height="960" rx="216" fill="url(#bg)"/>
+  <rect x="32" y="32" width="960" height="960" rx="216" fill="url(#glow)"/>
+
+  <!-- Books -->
+  <g>
+    <rect x="214" y="300" width="132" height="440" rx="22" fill="#ff6b6b"/>
+    <rect x="214" y="370" width="132" height="26" fill="#c94a55"/>
+    <rect x="214" y="640" width="132" height="26" fill="#c94a55"/>
+
+    <rect x="366" y="226" width="150" height="514" rx="22" fill="#ffb547"/>
+    <rect x="366" y="300" width="150" height="26" fill="#d98a1f"/>
+    <rect x="366" y="640" width="150" height="26" fill="#d98a1f"/>
+
+    <rect x="536" y="350" width="116" height="390" rx="22" fill="#2ec4b6"/>
+    <rect x="536" y="420" width="116" height="22" fill="#1f9187"/>
+
+    <!-- Leaning book -->
+    <g transform="rotate(16 672 740)">
+      <rect x="672" y="320" width="128" height="420" rx="22" fill="#f4e9d8"/>
+      <rect x="672" y="390" width="128" height="24" fill="#cdbfa6"/>
+      <rect x="672" y="650" width="128" height="24" fill="#cdbfa6"/>
+    </g>
+  </g>
+
+  <!-- Shelf -->
+  <rect x="160" y="736" width="704" height="56" rx="28" fill="#fff4dd"/>
+
+  <!-- Sparkle -->
+  <path d="M764 214 L784 270 L840 290 L784 310 L764 366 L744 310 L688 290 L744 270 Z" fill="#fff4dd"/>
+
+  <!-- Gloss -->
+  <rect x="32" y="32" width="960" height="480" rx="216" fill="url(#shine)"/>
+</svg>
