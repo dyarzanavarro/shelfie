@@ -80,6 +80,7 @@ export interface LibraryApi {
   libraryPath(): Promise<string>
   pathForFile(file: File): string
   convertToEpub(id: number): Promise<ActionResult>
+  convertToAzw3(id: number): Promise<ActionResult>
   getSettings(): Promise<KindleSettings>
   saveSettings(input: KindleSettingsInput): Promise<KindleSettings>
   testSmtp(input: KindleSettingsInput): Promise<ActionResult>

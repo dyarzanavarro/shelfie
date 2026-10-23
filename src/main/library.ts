@@ -11,11 +11,11 @@ import { readOpfFile } from './metadata/epub'
 import { detectImageExt, type ExtractedCover, type ExtractedMetadata } from './metadata/types'
 
 // Conversion is CPU-heavy (seconds for large books), so it runs off the main process thread.
-function convertInWorker(source: string, meta: EpubMetadata): Promise<Buffer> {
+function convertInWorker(source: string, meta: EpubMetadata, target: 'epub' | 'azw3'): Promise<Buffer> {
   return new Promise((resolve, reject) => {
-    const worker = createConvertWorker({ workerData: { source, meta } })
-    worker.once('message', (m: { ok: boolean; epub?: Uint8Array; message?: string }) =>
-      m.ok ? resolve(Buffer.from(m.epub!)) : reject(new Error(m.message))
+    const worker = createConvertWorker({ workerData: { source, meta, target } })
+    worker.once('message', (m: { ok: boolean; data?: Uint8Array; message?: string }) =>
+      m.ok ? resolve(Buffer.from(m.data!)) : reject(new Error(m.message))
     )
     worker.once('error', reject)
     worker.once('exit', (code) => code !== 0 && reject(new Error(`Converter stopped unexpectedly (code ${code})`)))
@@ -134,10 +134,26 @@ export class Library {
     const source = ['azw3', 'mobi', 'azw'].map((fmt) => book.formats.find((f) => f.format === fmt)).find(Boolean)
     if (!source) throw new Error('No MOBI or AZW3 file to convert')
 
-    const epub = await convertInWorker(this.absPath(source.path), book)
-    const relPath = join(this.db.getDir(bookId)!, `${safeSegment(book.title)} - ${safeSegment(book.authors[0] ?? 'Unknown')}.epub`)
-    await writeFile(this.absPath(relPath), epub)
-    this.db.addFormat(bookId, 'epub', relPath, epub.length, createHash('sha256').update(epub).digest('hex'))
+    return this.storeConverted(bookId, await convertInWorker(this.absPath(source.path), book, 'epub'), 'epub')
+  }
+
+  /** Converts the book's EPUB to AZW3 (what Kindles read over USB) and stores it. Returns the AZW3 path. */
+  async convertToAzw3(bookId: number): Promise<string> {
+    const book = this.db.getBook(bookId)
+    if (!book) throw new Error('Book not found')
+    const existing = book.formats.find((f) => f.format === 'azw3')
+    if (existing) return this.absPath(existing.path)
+
+    const source = book.formats.find((f) => f.format === 'epub')
+    if (!source) throw new Error('No EPUB file to convert')
+    return this.storeConverted(bookId, await convertInWorker(this.absPath(source.path), book, 'azw3'), 'azw3')
+  }
+
+  private async storeConverted(bookId: number, data: Buffer, format: 'epub' | 'azw3'): Promise<string> {
+    const book = this.db.getBook(bookId)!
+    const relPath = join(this.db.getDir(bookId)!, `${safeSegment(book.title)} - ${safeSegment(book.authors[0] ?? 'Unknown')}.${format}`)
+    await writeFile(this.absPath(relPath), data)
+    this.db.addFormat(bookId, format, relPath, data.length, createHash('sha256').update(data).digest('hex'))
     return this.absPath(relPath)
   }
 

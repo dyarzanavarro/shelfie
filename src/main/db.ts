@@ -65,11 +65,28 @@ export function sortTitle(title: string): string {
   return title.replace(/^(the|a|an)\s+/i, '').trim().toLowerCase()
 }
 
+const SUFFIX = /^(jr|sr|ii|iii|iv|phd|md)\.?$/i
+const PARTICLES = new Set(['le', 'la', 'de', 'du', 'des', 'di', 'da', 'del', 'van', 'von', 'der', 'den', 'ten', 'ter', 'st.'])
+
+/** "Sanderson, Brandon" → "Brandon Sanderson", so both spellings are one author. */
+export function normalizeAuthor(name: string): string {
+  const clean = name.replace(/\s+/g, ' ').trim()
+  const m = clean.match(/^([^,]+),\s*([^,]+)$/)
+  if (!m) return clean
+  const [, last, first] = m
+  // "Martin Luther King, Jr." keeps its suffix; "Andrew Tanenbaum, Albert Woodhull" is two people.
+  if (SUFFIX.test(first.trim()) || last.trim().split(' ').length > 2) return clean
+  return `${first.trim()} ${last.trim()}`
+}
+
+/** Sort key by surname: "Ursula K. Le Guin" → "le guin, ursula k.". */
 export function sortAuthor(name: string): string {
   const parts = name.trim().split(/\s+/)
   if (parts.length < 2) return name.toLowerCase()
-  const last = parts.pop()!
-  return `${last}, ${parts.join(' ')}`.toLowerCase()
+  let i = parts.length - 1
+  if (SUFFIX.test(parts[i]) && i > 1) i--
+  while (i > 1 && PARTICLES.has(parts[i - 1].toLowerCase())) i--
+  return `${parts.slice(i).join(' ')}, ${parts.slice(0, i).join(' ')}`.toLowerCase()
 }
 
 export class LibraryDb {
@@ -80,6 +97,28 @@ export class LibraryDb {
     this.db.pragma('journal_mode = WAL')
     this.db.pragma('foreign_keys = ON')
     this.db.exec(SCHEMA)
+    this.normalizeAuthors()
+  }
+
+  /** Merges "Last, First" spellings into "First Last" and refreshes sort keys. Cheap when nothing changed. */
+  private normalizeAuthors(): void {
+    const authors = this.db.prepare('SELECT id, name, sort_name FROM authors').all() as Array<{ id: number; name: string; sort_name: string }>
+    this.db.transaction(() => {
+      for (const a of authors) {
+        const name = normalizeAuthor(a.name)
+        if (name !== a.name) {
+          const same = this.db.prepare('SELECT id FROM authors WHERE name = ? AND id != ?').get(name, a.id) as { id: number } | undefined
+          if (same) {
+            // Move this spelling's books to the existing author, then drop it.
+            this.db.prepare('INSERT OR IGNORE INTO book_authors (book_id, author_id, position) SELECT book_id, ?, position FROM book_authors WHERE author_id = ?').run(same.id, a.id)
+            this.db.prepare('DELETE FROM authors WHERE id = ?').run(a.id)
+            continue
+          }
+          this.db.prepare('UPDATE authors SET name = ? WHERE id = ?').run(name, a.id)
+        }
+        if (sortAuthor(name) !== a.sort_name) this.db.prepare('UPDATE authors SET sort_name = ? WHERE id = ?').run(sortAuthor(name), a.id)
+      }
+    })()
   }
 
   hashExists(hash: string): boolean {
@@ -110,7 +149,7 @@ export class LibraryDb {
         'INSERT INTO authors (name, sort_name) VALUES (?, ?) ON CONFLICT(name) DO UPDATE SET name = name RETURNING id'
       )
       const link = this.db.prepare('INSERT OR IGNORE INTO book_authors (book_id, author_id, position) VALUES (?, ?, ?)')
-      book.authors.forEach((name, i) => {
+      book.authors.map(normalizeAuthor).forEach((name, i) => {
         const { id } = upsertAuthor.get(name, sortAuthor(name)) as { id: number }
         link.run(bookId, id, i)
       })
@@ -144,7 +183,7 @@ export class LibraryDb {
          AND NOT EXISTS (SELECT 1 FROM formats f WHERE f.book_id = b.id AND f.format = ?)
          ORDER BY b.id LIMIT 1`
       )
-      .get(book.isbn ?? null, sortTitle(book.title), book.authors[0], format) as
+      .get(book.isbn ?? null, sortTitle(book.title), normalizeAuthor(book.authors[0] ?? ''), format) as
       | { id: number; dir: string; has_cover: number }
       | undefined
     return row && { id: row.id, dir: row.dir, hasCover: !!row.has_cover }
@@ -170,7 +209,8 @@ export class LibraryDb {
     const order = {
       added: 'b.added_at DESC, b.id DESC',
       title: 'b.sort_title ASC',
-      author: 'first_author_sort ASC, b.sort_title ASC'
+      // A series sorts as one block where its name falls among the author's titles, in series order.
+      author: `first_author_sort ASC, COALESCE(LOWER(b.series), b.sort_title) ASC, b.series_index ASC, b.sort_title ASC`
     }[sort]
 
     const params: Array<string | number> = []

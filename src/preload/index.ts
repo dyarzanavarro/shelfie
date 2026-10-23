@@ -15,6 +15,7 @@ const api: LibraryApi = {
   libraryPath: () => ipcRenderer.invoke('library:path'),
   pathForFile: (file) => webUtils.getPathForFile(file),
   convertToEpub: (id) => ipcRenderer.invoke('library:convertToEpub', id),
+  convertToAzw3: (id) => ipcRenderer.invoke('library:convertToAzw3', id),
   getSettings: () => ipcRenderer.invoke('settings:get'),
   saveSettings: (input) => ipcRenderer.invoke('settings:save', input),
   testSmtp: (input) => ipcRenderer.invoke('kindle:testSmtp', input),

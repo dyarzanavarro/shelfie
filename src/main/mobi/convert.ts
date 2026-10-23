@@ -56,6 +56,26 @@ class Resources {
 
 function buildToc(index: Index | undefined, resolve: (tags: Map<number, number[]>) => string | undefined): TocEntry[] {
   if (!index) return []
+  // KF8 NCX entries can be in breadth-first order with explicit parent links (tag 21).
+  if (index.entries.some(({ tags }) => tags.has(21))) {
+    const nodes = index.entries.map(({ tags }) => {
+      const labelOffset = tags.get(3)?.[0]
+      const label = labelOffset !== undefined ? index.cncx.get(labelOffset)?.trim() : undefined
+      const href = resolve(tags)
+      return { entry: label && href ? ({ label, href, children: [] } as TocEntry) : undefined, parent: tags.get(21)?.[0], pos: tags.get(1)?.[0] ?? 0 }
+    })
+    const root: Array<{ entry: TocEntry; pos: number }> = []
+    const kids = new Map<number, Array<{ entry: TocEntry; pos: number }>>()
+    nodes.forEach((n) => {
+      if (!n.entry) return
+      const list = n.parent !== undefined && nodes[n.parent]?.entry ? (kids.get(n.parent) ?? kids.set(n.parent, []).get(n.parent)!) : root
+      list.push({ entry: n.entry, pos: n.pos })
+    })
+    nodes.forEach((n, i) => {
+      if (n.entry) n.entry.children = (kids.get(i) ?? []).sort((a, b) => a.pos - b.pos).map((k) => k.entry)
+    })
+    return root.sort((a, b) => a.pos - b.pos).map((r) => r.entry)
+  }
   const root: TocEntry[] = []
   const stack: Array<{ depth: number; children: TocEntry[] }> = [{ depth: -1, children: root }]
   for (const { tags } of index.entries) {

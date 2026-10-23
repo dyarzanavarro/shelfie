@@ -9,8 +9,9 @@ function formatSize(bytes: number): string {
 
 const CONVERTIBLE = ['mobi', 'azw3', 'azw']
 
-// What a Kindle can open when copied over USB (not EPUB).
+// What a Kindle can open when copied over USB. EPUB isn't one, so EPUB-only books are converted to AZW3 first.
 const USB_READABLE = ['azw3', 'mobi', 'azw', 'pdf']
+const USB_CONVERTIBLE = ['azw3', 'mobi', 'azw', 'pdf', 'epub']
 
 interface Props {
   book: Book
@@ -38,7 +39,8 @@ export function BookDetails({
   onOpenSettings
 }: Props) {
   const [busy, setBusy] = useState<'convert' | 'send' | 'usb' | null>(null)
-  const usbReadable = book.formats.some((f) => USB_READABLE.includes(f.format))
+  const usbReadable = book.formats.some((f) => USB_CONVERTIBLE.includes(f.format))
+  const needsAzw3 = !book.formats.some((f) => USB_READABLE.slice(0, 3).includes(f.format)) && book.formats.some((f) => f.format === 'epub')
 
   const copyToKindle = async () => {
     if (!usbKindle) return
@@ -106,10 +108,10 @@ export function BookDetails({
             <button
               className="primary"
               disabled={!!busy || !usbReadable}
-              title={usbReadable ? undefined : 'Kindles can’t open EPUB over USB. Use Send to Kindle for this book.'}
+              title={needsAzw3 ? 'Kindles can’t open EPUB over USB, so this book is converted to AZW3 first' : undefined}
               onClick={copyToKindle}
             >
-              {busy === 'usb' ? 'Copying…' : 'Copy to Kindle (USB)'}
+              {busy === 'usb' ? (needsAzw3 ? 'Converting & copying…' : 'Copying…') : 'Copy to Kindle (USB)'}
             </button>
           ))}
         {kindleConfigured ? (

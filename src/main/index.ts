@@ -84,6 +84,15 @@ function registerIpc(): void {
     }
   })
 
+  ipcMain.handle('library:convertToAzw3', async (_e, id: number): Promise<ActionResult> => {
+    try {
+      await library.convertToAzw3(id)
+      return { ok: true, message: 'Converted to AZW3' }
+    } catch (err) {
+      return { ok: false, message: `Conversion failed: ${err instanceof Error ? err.message : String(err)}` }
+    }
+  })
+
   ipcMain.handle('settings:get', () => settings.get())
   ipcMain.handle('settings:save', (_e, input: KindleSettingsInput) => settings.save(input))
   ipcMain.handle('kindle:testSmtp', (_e, input: KindleSettingsInput) => testSmtp(settings, input))

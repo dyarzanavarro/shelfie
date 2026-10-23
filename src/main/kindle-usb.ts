@@ -1,11 +1,15 @@
+import { nativeImage } from 'electron'
 import { execFile } from 'node:child_process'
-import { copyFile, mkdir, readdir, readFile, rename, rm, stat, statfs } from 'node:fs/promises'
+import { copyFile, mkdir, readdir, readFile, rename, rm, stat, statfs, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ActionResult, BookFormat, KindleDevice } from '../shared/types'
 import type { Library } from './library'
+import { MobiFile } from './mobi/mobi-file'
 
 // Formats a Kindle reads when copied over USB, best first. Kindles can't open EPUB from USB.
 const USB_FORMATS: BookFormat[] = ['azw3', 'mobi', 'azw', 'pdf']
+// Cover thumbnail height used by Paperwhite-class Kindles.
+const THUMBNAIL_HEIGHT = 330
 
 const errorMessage = (err: unknown) => (err instanceof Error ? err.message : String(err))
 const safeName = (s: string) =>
@@ -44,15 +48,22 @@ export async function copyToKindle(library: Library, bookId: number, root: strin
   const device = await readKindle(root).catch(() => null)
   if (!device) return { ok: false, message: 'Kindle not found. Is it still plugged in?' }
 
-  const book = library.db.getBook(bookId)
+  let book = library.db.getBook(bookId)
   if (!book) return { ok: false, message: 'Book not found' }
-  const file = USB_FORMATS.map((fmt) => book.formats.find((f) => f.format === fmt)).find(Boolean)
-  if (!file) {
-    return {
-      ok: false,
-      message: 'Kindles can’t open EPUB over USB, and this book has no MOBI, AZW3 or PDF. Use Send to Kindle instead.'
+  let converted = false
+  // Kindles can't open EPUB over USB, so EPUB-only (or EPUB + PDF) books are converted to AZW3 first.
+  const usable = book.formats.find((f) => USB_FORMATS.slice(0, 3).includes(f.format))
+  if (!usable && book.formats.some((f) => f.format === 'epub')) {
+    try {
+      await library.convertToAzw3(bookId)
+      converted = true
+      book = library.db.getBook(bookId)!
+    } catch (err) {
+      return { ok: false, message: `Couldn’t convert to AZW3: ${errorMessage(err)}` }
     }
   }
+  const file = USB_FORMATS.map((fmt) => book.formats.find((f) => f.format === fmt)).find(Boolean)
+  if (!file) return { ok: false, message: 'This book has no format a Kindle can read' }
 
   const author = book.authors[0] ?? 'Unknown'
   const target = devicePath(root, book.title, author, file.format)
@@ -69,11 +80,32 @@ export async function copyToKindle(library: Library, bookId: number, root: strin
     await copyFile(library.absPath(file.path), partial)
     await rm(target, { force: true })
     await rename(partial, target)
-    return { ok: true, message: `Copied “${book.title}” (${file.format.toUpperCase()}) to your Kindle` }
+    await writeThumbnail(root, target, await library.coverPath(bookId)).catch((err) => console.warn('Thumbnail failed:', err))
+    const how = converted ? 'converted to AZW3 and copied' : `copied (${file.format.toUpperCase()})`
+    return { ok: true, message: `“${book.title}” ${how} to your Kindle` }
   } catch (err) {
     await rm(partial, { force: true }).catch(() => undefined)
     return { ok: false, message: `Copy failed: ${errorMessage(err)}` }
   }
+}
+
+/**
+ * Kindles show sideloaded books' covers from system/thumbnails, keyed by the book's ASIN and type,
+ * and can lose them after syncing with Amazon. Writing the thumbnail ourselves (as Calibre does)
+ * keeps the cover visible.
+ */
+async function writeThumbnail(root: string, bookFile: string, cover: string | undefined): Promise<void> {
+  if (!cover || !/\.(azw3|mobi|azw)$/i.test(bookFile)) return
+  const dir = join(root, 'system', 'thumbnails')
+  if (!(await stat(dir).catch(() => null))?.isDirectory()) return
+  const mobi = new MobiFile(await readFile(bookFile))
+  const asin = mobi.exthString(113) ?? mobi.exthString(504)
+  const cdeType = mobi.exthString(501) ?? 'EBOK'
+  if (!asin || !/^[\w-]+$/.test(asin) || !/^[A-Z]{4}$/.test(cdeType)) return
+  const image = nativeImage.createFromPath(cover)
+  if (image.isEmpty()) return
+  const thumb = image.resize({ height: THUMBNAIL_HEIGHT, quality: 'best' }).toJPEG(90)
+  await writeFile(join(dir, `thumbnail_${asin}_${cdeType}_portrait.jpg`), thumb)
 }
 
 /**

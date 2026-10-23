@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type DragEvent } from 'react'
+import { Fragment, useCallback, useEffect, useState, type DragEvent, type MouseEvent } from 'react'
 import type {
   ActionResult,
   Book,
@@ -9,6 +9,7 @@ import type {
   SortKey
 } from '../../shared/types'
 import { BookDetails } from './BookDetails'
+import { BulkActions } from './BulkActions'
 import { Cover } from './Cover'
 import { SettingsDialog } from './SettingsDialog'
 
@@ -35,7 +36,8 @@ export function App() {
   const [books, setBooks] = useState<Book[]>([])
   const [search, setSearch] = useState('')
   const [sort, setSort] = useState<SortKey>('added')
-  const [selectedId, setSelectedId] = useState<number | null>(null)
+  const [selection, setSelection] = useState<Set<number>>(new Set())
+  const [anchor, setAnchor] = useState<number | null>(null)
   const [dragging, setDragging] = useState(false)
   const [busy, setBusy] = useState(false)
   const [progress, setProgress] = useState<ImportProgress | null>(null)
@@ -127,7 +129,46 @@ export function App() {
     if (paths.length) runImport(() => window.api.importFiles(paths))
   }
 
-  const selected = books.find((b) => b.id === selectedId) ?? null
+  const selectedBooks = books.filter((b) => selection.has(b.id))
+  const selected = selectedBooks.length === 1 ? selectedBooks[0] : null
+
+  // Click selects one book; Ctrl/Cmd-click toggles; Shift-click selects the range from the last click.
+  const onCardClick = (e: MouseEvent, book: Book, index: number, toggle = false) => {
+    e.stopPropagation()
+    if (e.shiftKey && anchor !== null) {
+      const from = books.findIndex((b) => b.id === anchor)
+      const [lo, hi] = from < 0 ? [index, index] : [Math.min(from, index), Math.max(from, index)]
+      const range = books.slice(lo, hi + 1).map((b) => b.id)
+      setSelection(new Set(e.ctrlKey || e.metaKey ? [...selection, ...range] : range))
+      return
+    }
+    if (toggle || e.ctrlKey || e.metaKey) {
+      const next = new Set(selection)
+      if (next.has(book.id)) next.delete(book.id)
+      else next.add(book.id)
+      setSelection(next)
+    } else {
+      setSelection(new Set([book.id]))
+    }
+    setAnchor(book.id)
+  }
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.target as HTMLElement).closest('input, textarea, select, .modal')) return
+      if (e.key === 'Escape') setSelection(new Set())
+      if (e.key === 'a' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault()
+        setSelection(new Set(books.map((b) => b.id)))
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [books])
+
+  // When sorted by author, a header starts each author's run of books.
+  const authorCounts = new Map<string, number>()
+  if (sort === 'author') for (const b of books) authorCounts.set(b.authors[0] ?? '', (authorCounts.get(b.authors[0] ?? '') ?? 0) + 1)
 
   return (
     <div
@@ -181,7 +222,7 @@ export function App() {
       )}
 
       <div className="body">
-        <main className="grid-wrap" onClick={() => setSelectedId(null)}>
+        <main className={selection.size > 1 ? 'grid-wrap selecting' : 'grid-wrap'} onClick={() => setSelection(new Set())}>
           {books.length === 0 ? (
             <div className="empty">
               {search ? (
@@ -195,23 +236,41 @@ export function App() {
             </div>
           ) : (
             <ul className="grid">
-              {books.map((book) => (
-                <li
-                  key={book.id}
-                  className={book.id === selectedId ? 'card selected' : 'card'}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    setSelectedId(book.id)
-                  }}
-                >
-                  <Cover book={book} />
-                  {onKindle.has(book.id) && <span className="on-kindle">On Kindle</span>}
-                  <div className="card-title" title={book.title}>
-                    {book.title}
-                  </div>
-                  <div className="card-author">{book.authors.join(', ')}</div>
-                </li>
-              ))}
+              {books.map((book, i) => {
+                const author = book.authors[0] ?? ''
+                const header = sort === 'author' && (i === 0 || (books[i - 1].authors[0] ?? '') !== author)
+                const count = authorCounts.get(author) ?? 0
+                const isSelected = selection.has(book.id)
+                return (
+                  <Fragment key={book.id}>
+                    {header && (
+                      <li className="group-header">
+                        {author || 'Unknown'} <span className="muted">· {count} book{count === 1 ? '' : 's'}</span>
+                      </li>
+                    )}
+                    <li className={isSelected ? 'card selected' : 'card'} onClick={(e) => onCardClick(e, book, i)}>
+                      <Cover book={book} />
+                      <button
+                        className={isSelected ? 'check on' : 'check'}
+                        aria-label={isSelected ? 'Deselect' : 'Select'}
+                        aria-pressed={isSelected}
+                        onClick={(e) => onCardClick(e, book, i, true)}
+                      >
+                        ✓
+                      </button>
+                      {onKindle.has(book.id) && <span className="on-kindle">On Kindle</span>}
+                      <div className="card-title" title={book.title}>
+                        {book.title}
+                      </div>
+                      <div className="card-author">
+                        {sort === 'author' && book.series
+                          ? `${book.series}${book.seriesIndex != null ? ` #${book.seriesIndex}` : ''}`
+                          : book.authors.join(', ')}
+                      </div>
+                    </li>
+                  </Fragment>
+                )
+              })}
             </ul>
           )}
         </main>
@@ -223,14 +282,25 @@ export function App() {
             usbKindle={usbKindle}
             onKindle={onKindle.has(selected.id)}
             onCopiedToKindle={refreshOnKindle}
-            onClose={() => setSelectedId(null)}
+            onClose={() => setSelection(new Set())}
             onChanged={refresh}
             onRemoved={async () => {
-              setSelectedId(null)
+              setSelection(new Set())
               await refresh()
             }}
             onResult={showResult}
             onOpenSettings={() => setSettingsOpen(true)}
+          />
+        )}
+        {selectedBooks.length > 1 && (
+          <BulkActions
+            books={selectedBooks}
+            usbKindle={usbKindle}
+            onKindle={onKindle}
+            onClear={() => setSelection(new Set())}
+            onChanged={refresh}
+            onCopiedToKindle={refreshOnKindle}
+            onResult={showResult}
           />
         )}
       </div>

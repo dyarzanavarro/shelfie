@@ -1,7 +1,7 @@
 {
   "name": "shelfie",
   "productName": "Shelfie",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "A lean ebook library with format conversion and Kindle transfer",
   "author": "Dan",
